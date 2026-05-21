@@ -1,18 +1,20 @@
 # Activum Clipping Agent
 
 Agente de vigilancia de medios para el departamento de Comunicación de Activum.
-Se despliega en Vercel y se dispara cada lunes automáticamente vía Vercel Cron.
-El informe semanal se envía por **email** (Resend) al destinatario configurado.
+Se ejecuta cada lunes en **GitHub Actions** y entrega el informe semanal por **email** (Resend).
 Sustituye herramientas de pago (Meltwater, Mention) con un ahorro estimado de 3.600–4.800 €/año.
 
 ---
 
 ## Cómo funciona
 
-1. **Vercel Cron** llama cada lunes a las 06:00 UTC (≈ 07:00 Madrid en invierno, 08:00 en verano) al endpoint `/api/clipping`.
-2. El endpoint verifica el header `Authorization: Bearer ${CRON_SECRET}`.
-3. Lanza en paralelo búsquedas web vía la API de Anthropic (`web_search`) sobre los 3 bloques de keywords definidos en [config/keywords.js](config/keywords.js).
-4. Deduplica, filtra por relevancia, genera un resumen ejecutivo y manda el informe HTML completo por email vía Resend.
+1. **GitHub Actions** dispara el workflow cada lunes a las 06:00 UTC (≈ 07:00 Madrid en invierno, 08:00 en verano).
+2. El workflow ejecuta `node bin/run.js` con las credenciales en secrets.
+3. El agente lanza búsquedas web vía la API de Anthropic (`web_search`) sobre los 3 bloques de keywords definidos en [config/keywords.js](config/keywords.js).
+4. Las búsquedas son **secuenciales con espera de 65s entre llamadas** para no superar el rate limit del Tier 1 de Anthropic (10K input tokens/min).
+5. Deduplica, filtra por relevancia, genera un resumen ejecutivo y manda el informe HTML completo por email vía Resend.
+
+Tiempo total de ejecución: **~3-4 minutos**. GitHub Actions admite hasta 6h por job, sobra margen.
 
 ---
 
@@ -20,73 +22,52 @@ Sustituye herramientas de pago (Meltwater, Mention) con un ahorro estimado de 3.
 
 ```
 ia_clipping/
-├── api/
-│   └── clipping.js        # Endpoint HTTP que Vercel Cron dispara
+├── .github/workflows/
+│   └── clipping.yml         # Cron + workflow_dispatch
+├── bin/
+│   └── run.js               # Entrypoint CLI (lo que ejecuta el workflow)
 ├── src/
-│   ├── api.js             # Modelo + headers de la API de Anthropic
-│   ├── env.js             # Loader de .env (solo dev local)
-│   ├── run.js             # Orquestador compartido
-│   ├── clipping.js        # Búsqueda, deduplicación, filtrado
-│   ├── report.js          # Resumen ejecutivo + HTML
-│   └── email.js           # Envío vía Resend
+│   ├── api.js               # Modelo + headers de la API de Anthropic
+│   ├── env.js               # Loader de .env (solo dev local)
+│   ├── run.js               # Orquestador
+│   ├── clipping.js          # Búsqueda, deduplicación, filtrado
+│   ├── report.js            # Resumen ejecutivo + HTML
+│   └── email.js             # Envío vía Resend
 ├── config/
-│   └── keywords.js        # ← EDITAR AQUÍ: keywords, fuentes, umbrales
-├── vercel.json            # Configuración del cron
+│   └── keywords.js          # ← EDITAR AQUÍ: keywords, fuentes, umbrales
 ├── package.json
 └── .env.example
 ```
 
 ---
 
-## Despliegue paso a paso
+## Despliegue
 
-### 1. Crear el repo en GitHub (manual)
-
-En https://github.com/new crea un repo vacío (privado recomendado). **No** añadas README, .gitignore ni licencia desde la UI.
-
-Luego, desde la carpeta del proyecto:
-
-```bash
-git init
-git add .
-git commit -m "Initial commit"
-git branch -M main
-git remote add origin git@github.com:TU_USUARIO/TU_REPO.git
-git push -u origin main
-```
-
-### 2. Crear cuenta en Resend y verificar dominio
+### 1. Crear cuenta en Resend y obtener API key
 
 1. Sign up en https://resend.com (gratis, 3.000 emails/mes).
-2. **API Keys → Create API Key**. Guarda el valor `re_...` para el siguiente paso.
-3. **Domains → Add Domain**: añade `activum.com` (o el dominio que vayas a usar como remitente).
-4. Resend te da unos registros DNS (SPF, DKIM, MX). Añádelos en el panel de tu proveedor de DNS y espera a que Resend marque el dominio como **Verified**.
-5. Mientras esté pendiente, puedes probar con `EMAIL_FROM=onboarding@resend.dev` enviando **solo a la dirección de tu cuenta Resend**.
+2. **API Keys → Create API Key**. Guarda el valor `re_...`.
+3. **Domains → Add Domain**: añade `activum.com` (o el dominio que vayáis a usar). Añade los registros DNS que indica Resend (SPF, DKIM) y espera a que el dominio aparezca como **Verified**.
+4. **Atajo para probar antes de verificar el dominio**: usa `EMAIL_FROM=onboarding@resend.dev` con `EMAIL_TO` = el email con el que te registraste en Resend.
 
-### 3. Conectar el repo a Vercel
+### 2. Añadir los Repository Secrets en GitHub
 
-1. https://vercel.com/new → importa el repo.
-2. **Framework Preset**: "Other".
-3. **Build / Output**: déjalos vacíos.
-4. Antes de "Deploy", añade las variables de entorno del paso siguiente.
+En https://github.com/activum-innovacion/clipping_agent/settings/secrets/actions añade estos 4 secrets:
 
-### 4. Variables de entorno en Vercel
-
-En **Project Settings → Environment Variables** añade con scope **Production**:
-
-| Nombre | Valor |
+| Name | Value |
 |---|---|
-| `ANTHROPIC_API_KEY` | `sk-ant-...` |
-| `RESEND_API_KEY` | `re_...` |
-| `EMAIL_FROM` | `clipping@activum.com` (dominio verificado en Resend) |
+| `ANTHROPIC_API_KEY` | `sk-ant-...` (de [console.anthropic.com](https://console.anthropic.com/settings/keys)) |
+| `RESEND_API_KEY` | `re_...` del paso 1 |
+| `EMAIL_FROM` | `clipping@activum.com` (o `onboarding@resend.dev` para probar) |
 | `EMAIL_TO` | `comunicacion@activum.com` (acepta varias separadas por coma) |
-| `CRON_SECRET` | Genera uno con `openssl rand -hex 32` |
 
-Después haz **Deploy**.
+### 3. Probar manualmente
 
-### 5. Verificar el cron
+En https://github.com/activum-innovacion/clipping_agent/actions:
+1. Selecciona el workflow **Weekly clipping**.
+2. **Run workflow** → puedes elegir `dry_run: true` para validar sin enviar email, o dejarlo en `false` para envío real.
 
-En **Project → Cron Jobs** verás `/api/clipping` programado a `0 6 * * 1`. Pulsa "Run" para disparar una ejecución manual y comprobar que llega el email.
+Si funciona, el cron semanal queda activado automáticamente.
 
 ---
 
@@ -99,54 +80,50 @@ keywords: {
   marca: [
     "Activum",
     "Activum Homes",
-    "Nombre del Proyecto",   // ← añade proyectos activos aquí
+    "Nombre del Proyecto",
   ],
   sector: [ "promoción residencial Madrid", /* ... */ ],
   macro:  [ "precio vivienda España", /* ... */ ],
 }
 ```
 
-Otros parámetros configurables:
+Otros parámetros:
 - `relevanceThreshold` (0–1): filtra resultados poco relevantes
 - `maxPerBlock`: máximo de fichas por bloque
 - `prioritySources`: medios que se priorizan en el ranking
 
-Cualquier cambio aquí se despliega automáticamente al hacer `git push` (Vercel redeploya cada push a `main`).
+Cualquier cambio aquí se aplica en la siguiente ejecución (no hace falta redesplegar nada).
 
 ---
 
 ## Desarrollo local
 
 ```bash
-# 1. Copia las variables de entorno
 cp .env.example .env
 # Edita .env con valores reales
 
-# 2. Levanta el endpoint en local
-npx vercel dev
+# Ejecuta el clipping completo
+node bin/run.js
 
-# 3. Dispara el endpoint (en otra terminal)
-curl -H "Authorization: Bearer $(grep CRON_SECRET .env | cut -d= -f2)" \
-     "http://localhost:3000/api/clipping?dry=1"
+# Dry-run (sin enviar email)
+node bin/run.js --dry-run
+
+# Ventana ampliada
+node bin/run.js --days=14
 ```
-
-Parámetros opcionales en query string:
-- `?days=14` — amplía la ventana de búsqueda (por defecto 7)
-- `?dry=1` — genera el informe pero **no** envía el email
 
 ---
 
-## Limitaciones del plan Hobby
+## Notas sobre rate limits
 
-- **Timeout: 60s por invocación.** Las búsquedas se ejecutan en paralelo para caber en ese margen. Si añades muchas keywords podría agotarse — reduce `maxPerBlock` o pasa a plan Pro (hasta 300s).
-- **Cron: 1 ejecución por semana** está holgadamente dentro de los límites de Hobby.
+- **Anthropic Tier 1**: 10.000 input tokens/min. El agente espera 65s entre bloques para no excederlo.
+- Si subes a **Tier 2** (depositando $5+ en console.anthropic.com), el límite pasa a 80K/min y se podrían eliminar las esperas. Para hacerlo, baja `RATE_LIMIT_WAIT_MS` en [src/clipping.js](src/clipping.js).
 
 ---
 
 ## Costes estimados
 
-- 3 llamadas con `web_search` (en paralelo) + 1 para el resumen ejecutivo
-- **< 0,10 € por ejecución** con Sonnet 4.6
-- **< 0,50 € al mes** en tokens de API
-- Resend Hobby: **gratis** (3.000 emails/mes)
-- Vercel Hobby: **gratis**
+- 3 llamadas con `web_search` + 1 para el resumen ejecutivo: **< 0,10 €/ejecución** con Sonnet 4.6.
+- Mensual: **< 0,50 €** en tokens de API.
+- GitHub Actions: **gratis** (uso muy por debajo de la cuota).
+- Resend Hobby: **gratis** (3.000 emails/mes).

@@ -176,20 +176,26 @@ export async function runClipping(config, days = 7) {
   const blocks = {};
   let totalRaw = 0;
 
-  // Búsquedas en paralelo (clave para caber en 60s de timeout en Vercel Hobby)
+  // Búsquedas SECUENCIALES con espera entre llamadas para no superar el
+  // rate limit de Anthropic Tier 1 (10K input tokens/min).
+  // Cada llamada de web_search inyecta 3-5K tokens de resultados como input;
+  // esperar ~65s entre llamadas garantiza que la ventana de un minuto se resetea.
+  const RATE_LIMIT_WAIT_MS = 65 * 1000;
   const entries = Object.entries(config.keywords);
-  const results = await Promise.all(
-    entries.map(async ([block, keywords]) => {
-      const raw = await searchBlock(block, keywords, dateRange, config);
-      const filtered = filterItems(raw, config, dateRange);
-      const deduped = deduplicateItems(filtered);
-      const sorted = sortItems(deduped);
-      const limited = sorted.slice(0, config.maxPerBlock);
-      return { block, raw, deduped, limited };
-    })
-  );
 
-  for (const { block, raw, deduped, limited } of results) {
+  for (let i = 0; i < entries.length; i++) {
+    const [block, keywords] = entries[i];
+    if (i > 0) {
+      console.log(`   ⏳  Esperando ${RATE_LIMIT_WAIT_MS / 1000}s (rate limit Anthropic Tier 1)...`);
+      await new Promise((r) => setTimeout(r, RATE_LIMIT_WAIT_MS));
+    }
+
+    const raw = await searchBlock(block, keywords, dateRange, config);
+    const filtered = filterItems(raw, config, dateRange);
+    const deduped = deduplicateItems(filtered);
+    const sorted = sortItems(deduped);
+    const limited = sorted.slice(0, config.maxPerBlock);
+
     blocks[block] = limited;
     totalRaw += raw.length;
     console.log(

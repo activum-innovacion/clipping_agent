@@ -7,7 +7,7 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-    "dev": "vercel dev",
-    "deploy": "vercel deploy --prod"
+    "start": "node bin/run.js",
+    "dry-run": "node bin/run.js --dry-run"
   }
 }

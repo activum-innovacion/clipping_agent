@@ -1,0 +1,47 @@
+name: Weekly clipping
+
+on:
+  schedule:
+    # Lunes 06:00 UTC ≈ 07:00 Madrid (invierno) / 08:00 (verano)
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Ventana de búsqueda en días"
+        required: false
+        default: "7"
+      dry_run:
+        description: "Dry run (sin enviar email)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+jobs:
+  run-clipping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run clipping
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        run: |
+          DAYS="${{ inputs.days || '7' }}"
+          DRY="${{ inputs.dry_run || 'false' }}"
+          ARGS="--days=$DAYS"
+          if [ "$DRY" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          node bin/run.js $ARGS
