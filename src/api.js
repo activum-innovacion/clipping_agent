@@ -4,6 +4,9 @@ export const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 
 const MAX_RETRIES = 5;
 const FALLBACK_WAIT_MS = 30_000;
+// Si la API pide esperar más que esto, fallamos rápido en lugar de bloquear el workflow.
+// Un wait > 2min suele indicar cuota diaria agotada, no rate limit por minuto.
+const MAX_RETRY_WAIT_MS = 90_000;
 
 export function anthropicHeaders(extra = {}) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -60,6 +63,15 @@ export async function anthropicMessage(body) {
     if (response.status === 429 || response.status === 529) {
       const waitMs = computeWaitMs(response, attempt);
       const detail = await response.text().catch(() => "");
+
+      if (waitMs > MAX_RETRY_WAIT_MS) {
+        throw new Error(
+          `Anthropic pide esperar ${Math.round(waitMs / 1000)}s — probablemente cuota diaria agotada en Tier 1. ` +
+            `Sube de tier en https://console.anthropic.com/settings/billing o espera al reset. ` +
+            `Detalle: ${detail.slice(0, 200)}`
+        );
+      }
+
       console.log(
         `  ⏳ Rate limit (${response.status}) — esperando ${Math.round(waitMs / 1000)}s antes del retry ${attempt + 1}/${MAX_RETRIES}`
       );
