@@ -3,7 +3,7 @@
  * Genera el resumen ejecutivo (vía Claude) y el HTML del informe completo.
  */
 
-import { ANTHROPIC_URL, MODEL, anthropicHeaders } from "./api.js";
+import { MODEL, anthropicMessage } from "./api.js";
 
 function escapeHtml(str) {
   return String(str ?? "")
@@ -46,22 +46,11 @@ Redacta un resumen ejecutivo de 3–4 párrafos en español con estas caracterí
 
 Devuelve SOLO el texto del resumen, sin título ni encabezado.`;
 
-  const response = await fetch(ANTHROPIC_URL, {
-    method: "POST",
-    headers: anthropicHeaders(),
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 500,
-      messages: [{ role: "user", content: prompt }],
-    }),
+  const data = await anthropicMessage({
+    model: MODEL,
+    max_tokens: 500,
+    messages: [{ role: "user", content: prompt }],
   });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`API error ${response.status}: ${errText}`);
-  }
-
-  const data = await response.json();
   const text = data.content?.find((b) => b.type === "text")?.text || "";
   return text.trim();
 }

@@ -4,7 +4,7 @@
  * Usa la API de Anthropic con web_search tool para cada bloque de keywords.
  */
 
-import { ANTHROPIC_URL, MODEL, anthropicHeaders } from "./api.js";
+import { MODEL, anthropicMessage } from "./api.js";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -61,30 +61,19 @@ async function searchBlock(block, keywords, dateRange, config) {
     config.prioritySources
   );
 
-  const response = await fetch(ANTHROPIC_URL, {
-    method: "POST",
-    headers: anthropicHeaders(),
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 2500,
-      tools: [
-        {
-          type: "web_search_20250305",
-          name: "web_search",
-          max_uses: 3,
-          user_location: { type: "approximate", country: "ES" },
-        },
-      ],
-      messages: [{ role: "user", content: prompt }],
-    }),
+  const data = await anthropicMessage({
+    model: MODEL,
+    max_tokens: 2500,
+    tools: [
+      {
+        type: "web_search_20250305",
+        name: "web_search",
+        max_uses: 3,
+        user_location: { type: "approximate", country: "ES" },
+      },
+    ],
+    messages: [{ role: "user", content: prompt }],
   });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`API error ${response.status}: ${err}`);
-  }
-
-  const data = await response.json();
 
   // Extraer el texto de la respuesta (puede haber tool_use blocks intermedios)
   const textBlocks = data.content.filter((b) => b.type === "text");
