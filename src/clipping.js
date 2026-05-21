@@ -35,7 +35,7 @@ Busca noticias y artículos publicados entre ${dateRange.from} y ${dateRange.to}
 ${keywords.map((k) => `- "${k}"`).join("\n")}
 
 Instrucciones:
-1. Busca en medios españoles. Prioriza estas fuentes: ${sourceHint} y medios de referencia nacionales.
+1. Haz como máximo 3 búsquedas combinando las palabras clave más representativas en una sola query (separadas por OR o juntas). NO busques cada keyword por separado. Prioriza medios españoles como: ${sourceHint} y otros de referencia nacional.
 2. Para cada resultado relevante, extrae:
    - titular (texto exacto)
    - url
@@ -66,8 +66,15 @@ async function searchBlock(block, keywords, dateRange, config) {
     headers: anthropicHeaders(),
     body: JSON.stringify({
       model: MODEL,
-      max_tokens: 4000,
-      tools: [{ type: "web_search_20250305", name: "web_search" }],
+      max_tokens: 2500,
+      tools: [
+        {
+          type: "web_search_20250305",
+          name: "web_search",
+          max_uses: 3,
+          user_location: { type: "approximate", country: "ES" },
+        },
+      ],
       messages: [{ role: "user", content: prompt }],
     }),
   });
